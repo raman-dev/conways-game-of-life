@@ -68,8 +68,6 @@ public class Grid extends RenderObject {
         initColorBuffer(color);
     }
 
-
-
     public void setMaxDimensions(int width,int height,int rows,int columns){
         this.rows = rows;
         this.columns = columns;
@@ -174,7 +172,7 @@ public class Grid extends RenderObject {
     }
 
     public void gridVisible(boolean showGrid) {
-        this.showGrid = false;
+        this.showGrid = showGrid;
         if(showGrid){
             colorBuffer.clear();
             colorBuffer.put(color);

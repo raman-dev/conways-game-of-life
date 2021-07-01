@@ -3,6 +3,9 @@ package com.example.ramandeep.conwaysgameoflife;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.opengl.GLSurfaceView;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.preference.PreferenceManager;
 import android.util.AttributeSet;
 
@@ -15,28 +18,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Created by Ramandeep on 2017-09-21.
  */
 
-public class ConwayGLSurfaceView extends GLSurfaceView {
+public class ConwayGLSurfaceView extends GLSurfaceView implements ConwayProcessor.FrameUpdateListener,ConwayRenderer.DimensionMeasureListener {
 
     private ConwayRenderer conwayRenderer;
     private ConwayProcessor conwayProcessor;
-
-    private ConcurrentLinkedQueue<Object[]> livingList;
-    private ConcurrentLinkedQueue<Object[]> deadList;
-
-    private AtomicInteger rowsAtomic;
-    private CountDownLatch rowNumWait;
+    private ConcurrentLinkedQueue<byte[]> frameQueue;
     private CountDownLatch displayUpdateLatch;
 
-    private int[] defaultColumnSizes = {9, 12, 15, 18, 27, 36, 45, 54, 63, 72};
+    private final int[] defaultColumnSizes = {9, 12, 15, 18, 27, 36, 45, 54, 63, 72};
 
     private int columns = -1;
     private int rows = -1;
 
     private BackgroundTask initTask;
-    private Runnable initializationRunnable;
-    private Runnable pauseRenderRunnable;
-    private Runnable resumeRenderRunnable;
-
 
     private ArrayList<ConwayObject> conwayObjectList;
     private int conwayIter = 0;
@@ -61,51 +55,14 @@ public class ConwayGLSurfaceView extends GLSurfaceView {
     private void init(Context context) {
 
         initTask = new BackgroundTask("Initialization Thread");
-
-        rowNumWait = new CountDownLatch(1);
+        //send the data here
+        //from here send to glthread
         displayUpdateLatch = new CountDownLatch(0);
-        rowsAtomic = new AtomicInteger();
-
-        livingList = new ConcurrentLinkedQueue<>();
-        deadList = new ConcurrentLinkedQueue<>();
-
+        frameQueue = new ConcurrentLinkedQueue<>();
         columns = defaultColumnSizes[defaultColumnSizes.length - 2];
-
         //performs the grid calculations
-        conwayProcessor = new ConwayProcessor(context, livingList, deadList);
-        conwayRenderer = new ConwayRenderer(context, livingList, deadList, columns, rowNumWait, rowsAtomic);//renders cells to screen
-
-        initializationRunnable = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    rowNumWait.await();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                rows = rowsAtomic.get();
-                //now conwayProcessor can get initialized
-                conwayProcessor.init(rows, columns);
-                loadInitial(conwayObjectList.get(conwayIter));
-                updateConwayIter();
-                initialized = true;
-                System.out.println("InitGLSV!");
-            }
-        };
-
-        pauseRenderRunnable = new Runnable() {
-            @Override
-            public void run() {
-                conwayRenderer.pauseRendering();
-            }
-        };
-
-        resumeRenderRunnable = new Runnable() {
-            @Override
-            public void run() {
-                conwayRenderer.resumeRendering();
-            }
-        };
+        conwayProcessor = new ConwayProcessor(context,this);
+        conwayRenderer = new ConwayRenderer(context, columns,frameQueue,this);//renders cells to screen
 
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
 
@@ -116,17 +73,20 @@ public class ConwayGLSurfaceView extends GLSurfaceView {
 
         setEGLContextClientVersion(2);
         setRenderer(conwayRenderer);
+        setRenderMode(RENDERMODE_WHEN_DIRTY);
+    }
+
+    @Override
+    public void OnReceiveFrame(byte[] data) {
+        frameQueue.add(data);
+        requestRender();
     }
 
     @Override
     public void onResume() {
         //
         super.onResume();
-        if (!initialized) {
-            initTask.submitRunnable(initializationRunnable);
-        }
         conwayProcessor.onResume();
-        resumeRendering();
     }
 
     @Override
@@ -142,7 +102,6 @@ public class ConwayGLSurfaceView extends GLSurfaceView {
         conwayProcessor.setUpdateLatch(displayUpdateLatch);
         conwayProcessor.onPause();
         isProcessing = false;
-        pauseRendering();
     }
 
     public void onDestroy() {
@@ -154,29 +113,28 @@ public class ConwayGLSurfaceView extends GLSurfaceView {
     //start button was clicked
     public void onClickStart() {
         resumeProcessing();
-        resumeRendering();
     }
 
     //stop button clicked
     public void onClickStop() {
         pauseProcessing();
-        pauseRendering();
     }
 
     //next button clicked
     //when this is clicked display a new conwayObject
     //on the surface
     public void onClickNext() {
-        pauseRendering();
         pauseProcessing();
         clearUpdateQueues();
         loadNextConwayObject();
         updateConwayIter();
-        resumeRendering();
+        //i want to couple rendering and processing
+        //1 frame rendered per frame processed
+        //not like how i am doing now
     }
 
     private void clearUpdateQueues() {
-        livingList.clear();
+        frameQueue.clear();
     }
 
     private void updateConwayIter() {
@@ -198,14 +156,6 @@ public class ConwayGLSurfaceView extends GLSurfaceView {
 
     private void loadNextConwayObject() {
         conwayProcessor.loadNewObject(conwayObjectList.get(conwayIter));
-    }
-
-    private void pauseRendering() {
-        this.queueEvent(pauseRenderRunnable);//stop updating frames
-    }
-
-    private void resumeRendering() {
-        this.queueEvent(resumeRenderRunnable);//display frames
     }
 
     private void resumeProcessing() {
@@ -230,5 +180,25 @@ public class ConwayGLSurfaceView extends GLSurfaceView {
 
     public void gridVisible(boolean aBoolean) {
         conwayRenderer.gridVisible(aBoolean);
+    }
+
+    @Override
+    public void MaxRowsAvailable(final int maxRows) {
+        if(initialized){
+            return;
+        }
+        initTask.submitRunnable(new Runnable() {
+            @Override
+            public void run() {
+                rows = maxRows;
+                //now conwayProcessor can get initialized
+                //could grab a reference to the handler from here
+                conwayProcessor.init(rows, columns);
+                loadInitial(conwayObjectList.get(conwayIter));
+                updateConwayIter();
+                initialized = true;
+                System.out.println("InitGLSV!");
+            }
+        });
     }
 }

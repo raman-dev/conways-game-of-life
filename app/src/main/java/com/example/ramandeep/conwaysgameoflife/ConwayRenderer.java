@@ -28,9 +28,7 @@ import static android.opengl.GLES20.glViewport;
 
 class ConwayRenderer implements GLSurfaceView.Renderer{
 
-    private AtomicInteger rowsAtomic;
-
-    private CountDownLatch rowNumWait;
+    private final DimensionMeasureListener mDimensionMeasureListener;
     private CountDownLatch displayUpdateLatch;
 
     private Grid grid;
@@ -56,18 +54,17 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
     private float[] blue = {0f,0f,1f,1f};
     private float[] purple= {0.686f,0f,0.749f,1f};
 
-    public ConwayRenderer(Context context, ConcurrentLinkedQueue<Object[]> livingList, ConcurrentLinkedQueue<Object[]> deadList, int columns, CountDownLatch rowNumWait, AtomicInteger rowsAtomic) {
+    public ConwayRenderer(Context context, int columns, ConcurrentLinkedQueue<byte[]> frameQueue, DimensionMeasureListener mDimensionMeasureListener) {
 
         this.columns = columns;
-        this.rowNumWait = rowNumWait;
-        this.rowsAtomic = rowsAtomic;
+        this.mDimensionMeasureListener = mDimensionMeasureListener;
 
         viewMatrix = new float[16];
         projectionMatrix = new float[16];
         mvpMatrix = new float[16];
 
         grid = new Grid();
-        points = new Point(livingList,deadList);
+        points = new Point(frameQueue);
 
         gridVertexSource = RenderObject.readSourceFromRaw(context,R.raw.grid_vertex);
         spointFragmentSource = RenderObject.readSourceFromRaw(context,R.raw.spoint_fragment);
@@ -80,6 +77,7 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
     public void onSurfaceCreated(GL10 gl10, EGLConfig eglConfig) {
         glClearColor(0f,0f,0f,1f);
         System.out.println("glSurfaceView onSurfaceCreated!");
+
 
         grid.setShaderFromSource(GL_VERTEX_SHADER,gridVertexSource);
         grid.setShaderFromSource(GL_FRAGMENT_SHADER,spointFragmentSource);
@@ -98,10 +96,9 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
 
         //surfaceHeight/columnWidth
         rows = Math.round(height/colWidth);
-        rowsAtomic.set(rows);
         //make the other threads wait until
         //number of rows have been calculated
-        rowNumWait.countDown();
+        mDimensionMeasureListener.MaxRowsAvailable(rows);
         RenderObject.computeOrthoMVP(width,height,-10f,10f,viewMatrix,projectionMatrix,mvpMatrix);
         prepareGrid(width,height);
         points.setPointGridDimensions(width,height,rows,columns);
@@ -109,7 +106,6 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
         points.setMvpMatrix(mvpMatrix);
         points.generatePointGrid();
         points.setAttributeAndVBO();
-
         glLineWidth(2f);
 
         if(displayUpdateLatch != null){
@@ -140,14 +136,6 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
         this.displayUpdateLatch = updateLatch;
     }
 
-    public void pauseRendering() {
-        points.stopUpdating();
-    }
-
-    public void resumeRendering() {
-        points.startUpdating();
-    }
-
     public void gridVisible(boolean showGrid) {
         grid.gridVisible(showGrid);
     }
@@ -172,5 +160,9 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
                 cellColor = green;
         }
         points.setCellColor(cellColor);
+    }
+
+    public interface DimensionMeasureListener {
+        void MaxRowsAvailable(int rows);
     }
 }

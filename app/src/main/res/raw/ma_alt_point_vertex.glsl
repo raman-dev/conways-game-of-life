@@ -6,12 +6,12 @@ uniform float pointSize;
 uniform vec4 liveCellColor;
 
 varying vec4 fragColor;
-const vec4 dead = vec4(0.0f,0.0f,0.0f,1.0f);
+const vec4 dead = vec4(0.0,0.0,0.0,1.0);
 
 void main() {
     gl_Position = mvpMatrix*vec4(vPosition,1.0);
     gl_PointSize = pointSize;
-    if(CellStatus == 1.0f){
+    if(CellStatus == 1.0){
         fragColor = liveCellColor;
     }else{
         fragColor = dead;

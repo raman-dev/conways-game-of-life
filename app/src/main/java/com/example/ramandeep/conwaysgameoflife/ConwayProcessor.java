@@ -3,6 +3,7 @@ package com.example.ramandeep.conwaysgameoflife;
 import android.content.Context;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Message;
 import android.renderscript.Allocation;
 import android.renderscript.Element;
 import android.renderscript.Int2;
@@ -12,13 +13,9 @@ import android.renderscript.Type;
 import com.example.ramandeep.conwaysgameex5.ScriptC_ConwayProcessScript;
 
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashSet;
-import java.util.InputMismatchException;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Ramandeep on 2017-09-21.
@@ -27,20 +24,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ConwayProcessor {
 
     private static final int MAX_FRAMES_GENERATEED = 50;
+    protected static final int NEW_FRAME = 2398475;
+    private final FrameUpdateListener mFrameUpdateListener;
     private boolean initialized = false;
-
-    private ConcurrentLinkedQueue<Object[]> livingList;
-    private ConcurrentLinkedQueue<Object[]> deadList;
 
     private String threadName = "ConwayProcessThread";
     private HandlerThread thread;
     private Handler threadHandler;
 
-    private Runnable initializationRunnable;
     private Runnable AutoProcessRunnable;
     private Runnable DisplayNewInputRunnable;
     private Runnable DisplayAfterPauseRunnable;
-
 
     private long delay = 65;
 
@@ -58,25 +52,18 @@ public class ConwayProcessor {
     private int centerRow;
     private int centerColumn;
 
-    private HashSet<Integer> living;
-    private HashSet<Integer> stillAlive;
-    private HashSet<Integer> dead;
-    private HashSet<Integer> prevFrame;
-    private HashSet<Integer> newFrame;
-
     private boolean switchFlag = false;
-    private boolean newObject = false;
-    private boolean running = false;
     private boolean ranOnce = false;
 
-    private int framesWaiting = 0;
 
     private CountDownLatch displayUpdateLatch;
 
-    public ConwayProcessor(Context context, ConcurrentLinkedQueue<Object[]> livingList, ConcurrentLinkedQueue<Object[]> deadList) {
-        this.livingList = livingList;
-        this.deadList = deadList;
+    public interface FrameUpdateListener{
+        void OnReceiveFrame(byte[] data);
+    }
 
+    public ConwayProcessor(Context context,FrameUpdateListener mFrameUpdateListener) {
+        this.mFrameUpdateListener = mFrameUpdateListener;
         thread = new HandlerThread(threadName);
         thread.start();
         threadHandler = new Handler(thread.getLooper());
@@ -88,7 +75,6 @@ public class ConwayProcessor {
     public void init(int rows, int columns) {
         this.rows = rows;
         this.columns = columns;
-
         cellCount = rows * columns;
 
         centerRow = rows/2;
@@ -101,12 +87,6 @@ public class ConwayProcessor {
         }
         input = new byte[cellCount];
         output = new byte[cellCount];
-
-        living = new HashSet<>();
-        stillAlive = new HashSet<>();
-        dead = new HashSet<>();
-        prevFrame = new HashSet<>();
-        newFrame = new HashSet<>();
 
         //allocation
         Type type = Type.createX(rsContext, Element.I8(rsContext),cellCount);
@@ -124,7 +104,8 @@ public class ConwayProcessor {
             public void run() {
                 //process the grid
                 processGrid();
-                updateLocations(output);
+                //updateLocations(output);
+                sendNewFrame(output);
                 threadHandler.postDelayed(AutoProcessRunnable,delay);
             }
         };
@@ -133,7 +114,7 @@ public class ConwayProcessor {
         DisplayNewInputRunnable = new Runnable() {
             @Override
             public void run() {
-                updateLocations(input);
+                sendNewFrame(input);
             }
         };
 
@@ -153,7 +134,8 @@ public class ConwayProcessor {
                 }
                 //if the grid has not been processed then display input
                 if(!ranOnce){
-                    updateLocations(input);
+                    //updateLocations(input);
+                    sendNewFrame(input);
                 }else{
                     //if it has run atleast once then
                     if(switchFlag){
@@ -161,7 +143,8 @@ public class ConwayProcessor {
                     }else{
                         inputAllocation.copyTo(output);
                     }
-                    updateLocations(output);
+                    //updateLocations(output);
+                    sendNewFrame(output);
                 }
             }
         };
@@ -183,33 +166,13 @@ public class ConwayProcessor {
         ranOnce = true;
     }
 
-    private void updateLocations(byte[] output) {
-        newFrame.clear();
-        living.clear();//clear living
-        stillAlive.clear();
-        //create a set of all living locations
-        for (int i = 0; i < output.length; i++) {
-            if(output[i] == 1){
-                newFrame.add(i);
-            }
-        }
-        living.addAll(newFrame);
-        stillAlive.addAll(newFrame);
-        dead.addAll(prevFrame);
-
-        living.removeAll(dead);//only new living cells
-        stillAlive.retainAll(prevFrame);//still living from previous generation
-        dead.removeAll(stillAlive);
-        sendLocations();
-        //after sending save all living cells
-        dead.clear();
-        prevFrame.clear();
-        prevFrame.addAll(newFrame);
-    }
-
-    private void sendLocations() {
-        livingList.add(living.toArray());
-        deadList.add(dead.toArray());
+    private void sendNewFrame(byte[] nextGen){
+        //might need to convert output to something else
+        //i should copy this array since i will be writing into it after
+        //yea i was appending arrays everytime anyway
+        byte[] array = new byte[nextGen.length];
+        System.arraycopy(nextGen,0,array,0,nextGen.length);
+        mFrameUpdateListener.OnReceiveFrame(array);
     }
 
     public void onResume() {
@@ -229,7 +192,6 @@ public class ConwayProcessor {
     public void onPause() {
         System.out.println("ConwayProcessor Paused/Stopped!");
         stop();
-        prevFrame.clear();
     }
 
     public void onDestroy(){
@@ -275,10 +237,10 @@ public class ConwayProcessor {
         int dataCenterRow = dimensions.x/2;
         int dataCenterCol = dimensions.y/2;
 
-        if(dimensions.x%2 == 0){
+        if(dimensions.x % 2 == 0){
             dataCenterRow--;
         }
-        if(dimensions.y%2==0){
+        if(dimensions.y % 2 == 0){
             dataCenterCol--;
         }
 

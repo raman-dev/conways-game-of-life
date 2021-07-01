@@ -13,12 +13,16 @@ import java.nio.IntBuffer;
 
 import static android.opengl.GLES20.GL_COMPILE_STATUS;
 import static android.opengl.GLES20.GL_FRAGMENT_SHADER;
+import static android.opengl.GLES20.GL_LINK_STATUS;
+import static android.opengl.GLES20.GL_TRUE;
 import static android.opengl.GLES20.GL_VERTEX_SHADER;
 import static android.opengl.GLES20.glAttachShader;
 import static android.opengl.GLES20.glCompileShader;
 import static android.opengl.GLES20.glCreateProgram;
 import static android.opengl.GLES20.glCreateShader;
 import static android.opengl.GLES20.glDeleteShader;
+import static android.opengl.GLES20.glGetProgramInfoLog;
+import static android.opengl.GLES20.glGetProgramiv;
 import static android.opengl.GLES20.glGetShaderiv;
 import static android.opengl.GLES20.glLinkProgram;
 import static android.opengl.GLES20.glShaderSource;
@@ -49,15 +53,41 @@ public abstract class RenderObject {
     protected int colorReference = -1;
     protected int pointSizeReference = -1;
 
+
      protected void createProgram() {
-        program = glCreateProgram();//get an available program id
-        glAttachShader(program, vertexShader);
-        glAttachShader(program, fragmentShader);
+         program = glCreateProgram();//get an available program id
 
-        glLinkProgram(program);
+         glAttachShader(program, vertexShader);
+         glAttachShader(program, fragmentShader);
+         //"hook up" vertex output to fragment input
+         glLinkProgram(program);
+         checkProgramLinkStatus(program);
+         //shaders can be deleted since program has all the code
+         glDeleteShader(vertexShader);
+         glDeleteShader(fragmentShader);
+    }
 
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
+    public void checkProgramLinkStatus(int program){
+        int [] linkStatus = new int[1];
+        glGetProgramiv(program,GL_LINK_STATUS,linkStatus,0);
+        if(linkStatus[0] != GL_TRUE){
+            System.out.println("Failed to link program.");
+            System.out.println(glGetProgramInfoLog(program));
+        }else{
+            System.out.println("Successfully linked program.");
+        }
+    }
+
+    public void createProgram(String vertex_basic_source, String fragment_basic_source) {
+        setShaderFromSource(GL_VERTEX_SHADER,vertex_basic_source);
+        setShaderFromSource(GL_FRAGMENT_SHADER,fragment_basic_source);
+        createProgram();
+    }
+    public void createProgram(Context context, int vertex_basic, int fragment_basic) {
+        //read the shaders into strings
+        setShaderFromSource(GL_VERTEX_SHADER,readSourceFromRaw(context,vertex_basic));
+        setShaderFromSource(GL_FRAGMENT_SHADER,readSourceFromRaw(context,fragment_basic));
+        createProgram();
     }
 
      protected void setShaderFromSource(int shaderType, String shaderSource) {
@@ -81,9 +111,10 @@ public abstract class RenderObject {
         glGetShaderiv(shaderReference, GL_COMPILE_STATUS, compileResult, 0);
         if (compileResult[0] < 0) {
             System.out.println("Shader not compiled!");
+
             glDeleteShader(shaderReference);
         } else {
-            //System.out.println("Shader Compiled.");
+            System.out.println("Shader Compiled.");
         }
         return shaderReference;
     }
@@ -118,13 +149,6 @@ public abstract class RenderObject {
         mvpMatrixBuffer.position(0);
     }
 
-    //genericize  buffers into a map of name,value pairs in a map
-     protected void putFloatBuffer(String name, float[] values) {
-    }
-
-     protected void putIndexBuffer(String name, int[] values) {
-    }
-
      FloatBuffer getNativeOrderFloatBuffer(int size) {
         ByteBuffer byteBuffer = ByteBuffer.allocateDirect(size * BYTES_PER_FLOAT);
         byteBuffer.order(ByteOrder.nativeOrder());//native byte order
@@ -144,26 +168,7 @@ public abstract class RenderObject {
         return currentLocation + 3;
     }
 
-    public static int insertColor(float[] values, int currentLocation, float r, float g, float b, float a) {
-        values[currentLocation] = r;
-        values[currentLocation + 1] = g;
-        values[currentLocation + 2] = b;
-        values[currentLocation + 3] = a;
-        return currentLocation + 4;
-    }
-
-    public static int insertColor(float[] values, int currentLocation, float[] color) {
-        values[currentLocation] = color[0];
-        values[currentLocation + 1] = color[1];
-        values[currentLocation + 2] = color[2];
-        values[currentLocation + 3] = color[3];
-        return currentLocation + 4;
-    }
-
     abstract void draw();
-
-    protected void drawAlt() {
-    }
 
      public static void computeOrthoMVP(int width, int height, float near, float far, float[] viewMatrix, float[] projectionMatrix, float[] mvpMatrix) {
         float left = width / 2f;

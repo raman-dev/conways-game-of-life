@@ -1,8 +1,14 @@
 package com.example.ramandeep.conwaysgameoflife;
 
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
+import android.util.Log;
+
 import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static android.opengl.GLES20.GL_ARRAY_BUFFER;
 import static android.opengl.GLES20.GL_DYNAMIC_DRAW;
@@ -40,7 +46,8 @@ public class Point extends RenderObject {
     private static final int FLOATS_PER_CELL_2 = VERTICES_PER_CELL * (POSITION_COMPONENT_COUNT + STATUS_COMPONENT_COUNT);
 
     private int[] indices;
-
+    //length of each vertex attribute in bytes
+    //x,y,z,cellStatus
     private int vertexStatusStride = BYTES_PER_FLOAT*(POSITION_COMPONENT_COUNT + STATUS_COMPONENT_COUNT);
     private int firstStatusPosition = BYTES_PER_FLOAT*(POSITION_COMPONENT_COUNT);
 
@@ -53,53 +60,37 @@ public class Point extends RenderObject {
     private float width;
     private float height;
 
-    private ConcurrentLinkedQueue<Object[]> liveList;
-    private ConcurrentLinkedQueue<Object[]> deadList;
-
-    private Object[] array;
-
     private FloatBuffer vertexAndStatusBuffer;
-    private FloatBuffer liveCellBuffer;
-    private FloatBuffer deadCellBuffer;
     private FloatBuffer cellColorBuffer;
 
-    private int liveCellBufferByteSize;
-    private int deadCellBufferByteSize;
 
     private float[] vertexAndStatus;
     private int cellStatusReference;
     private int cellColorReference;
 
-    float[] livingCell = {1.0f};
-    float[] deadCell = {0.0f};
-
-    private boolean update = true;
-
     private float[] cellColor = {0f,1f,0f,1f};
+    private ConcurrentLinkedQueue<byte[]> frameQueue;
 
-    public Point(ConcurrentLinkedQueue<Object[]> liveList, ConcurrentLinkedQueue<Object[]> deadList) {
-        this.liveList = liveList;
-        this.deadList = deadList;
+    public Point(ConcurrentLinkedQueue<byte[]> frameQueue) {
+        this.frameQueue = frameQueue;
         initStatusBuffers();
     }
 
     private void initStatusBuffers() {
-        liveCellBuffer = getNativeOrderFloatBuffer(livingCell.length);
-        liveCellBuffer.put(livingCell);
-        liveCellBuffer.position(0);
-        liveCellBufferByteSize = liveCellBuffer.capacity() * BYTES_PER_FLOAT;
-
-
-        deadCellBuffer = getNativeOrderFloatBuffer(deadCell.length);
-        deadCellBuffer.put(deadCell);
-        deadCellBuffer.position(0);
-        deadCellBufferByteSize = deadCellBuffer.capacity() * BYTES_PER_FLOAT;
-
         cellColorBuffer = getNativeOrderFloatBuffer(cellColor.length);
         cellColorBuffer.put(cellColor);
         cellColorBuffer.position(0);
     }
 
+    /*
+        current structure
+        ------------------
+        vec3 pos;
+        float cellStatus;
+
+        xn,yn,zn,cellStatus_n,
+
+     */
     @Override
     public void draw() {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,buffers[0]);
@@ -113,10 +104,11 @@ public class Point extends RenderObject {
 
         glUseProgram(program);
 
-        if(update){
-            updateCells();
+        //new frames available
+        //push the oldest and then
+        if(!frameQueue.isEmpty()){
+            pushNewData();
         }
-
         glUniformMatrix4fv(mvpMatrixReference,1,false,mvpMatrixBuffer);
         glUniform1f(pointSizeReference,pointSize);
         glUniform4fv(cellColorReference,1,cellColorBuffer);
@@ -127,35 +119,38 @@ public class Point extends RenderObject {
         glDisableVertexAttribArray(cellStatusReference);
     }
 
-    private void updateCells(){
-        if(!liveList.isEmpty()){
-            array = liveList.poll();
-            for (int i = 0; i < array.length; i++) {
-                int location = (int) array[i];
-                changeCellStatusAtL(numberOfCells - location);
-            }
+    private void pushNewData() {
+        //push new values to gpu
+        //lets say a frame arrives while pushing data
+        //then what?
+        //needs to be a queue
+        //
+        //i want to push the entire byte array at once
+        byte[] data = frameQueue.poll();//remove the oldest frame
+        //Log.i("GLThread", Arrays.toString(data));
+        //replace the status attribute in the vertexAndStatus array
+        int stride = POSITION_COMPONENT_COUNT;//jump over this many elements
+        for(int i = 0;i < data.length;i++,stride += POSITION_COMPONENT_COUNT + 1){
+            vertexAndStatusBuffer.put(stride,data[i]);
         }
-        if(!deadList.isEmpty()){
-            array = deadList.poll();
-            for (int i = 0; i < array.length; i++) {
-                int location = (int) array[i];
-                changeCellStatusAtD(numberOfCells - location);
-            }
-        }
+        //correct placement
+//        vertexAndStatusBuffer.put(3,1f);
+//        vertexAndStatusBuffer.put(7,1f);
+        glBufferSubData(GL_ARRAY_BUFFER,0,vertexAndStatusBuffer.capacity()*BYTES_PER_FLOAT,vertexAndStatusBuffer);
     }
-    
-    private void changeCellStatusAtL(int location){
+
+    @Deprecated
+    private void changeCellStatusAt(int location,int bufferByteSize,FloatBuffer cellBuffer){
         int offset = POSITION_COMPONENT_COUNT + (location - 1)*FLOATS_PER_CELL_2;//VERTICES_PER_CELL*(POSITION_COMPONENT_COUNT + STATUS_COMPONENT_COUNT);
         int byteOffset = BYTES_PER_FLOAT*offset;
-        glBufferSubData(GL_ARRAY_BUFFER,byteOffset,liveCellBufferByteSize,liveCellBuffer);
-    }
-    private void changeCellStatusAtD(int location){
-        int offset = POSITION_COMPONENT_COUNT + (location - 1)*FLOATS_PER_CELL_2;//VERTICES_PER_CELL*(POSITION_COMPONENT_COUNT + STATUS_COMPONENT_COUNT);
-        int byteOffset = BYTES_PER_FLOAT*offset;
-        glBufferSubData(GL_ARRAY_BUFFER,byteOffset,deadCellBufferByteSize,deadCellBuffer);
+        //target,offset into attribute vector,size in bytes, cellBuffer to send to gpu
+        glBufferSubData(GL_ARRAY_BUFFER,byteOffset,bufferByteSize,cellBuffer);
+        //whole buffer or small amount of data
+        //i can replace the whole buffer
     }
 
     public void setAttributeAndVBO(){
+        //get the render thread looper
         buffers = new int[2];
         glGenBuffers(2,buffers,0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,buffers[0]);
@@ -165,36 +160,11 @@ public class Point extends RenderObject {
         glBindBuffer(GL_ARRAY_BUFFER,buffers[1]);
         glBufferData(GL_ARRAY_BUFFER,vertexAndStatusBuffer.capacity() * BYTES_PER_FLOAT,vertexAndStatusBuffer,GL_DYNAMIC_DRAW);
 
-
         positionReference = glGetAttribLocation(program,"vPosition");
         cellStatusReference = glGetAttribLocation(program,"CellStatus");
         pointSizeReference = glGetUniformLocation(program,"pointSize");
         mvpMatrixReference = glGetUniformLocation(program,"mvpMatrix");
-        cellColorReference=  glGetUniformLocation(program,"liveCellColor");
-    }
-
-    @Deprecated
-    private void changeColorAt(int row, int column) {
-        if(row < 1 || row > rows){
-            return;
-        }if(column < 1 || column > columns){
-            return;
-        }
-        //in the vertex and color
-        //get four locations
-        //from row and column
-        //cell number from the beginning
-        //first determine which cell out of all the cells am i altering
-        int cellNumber = numberOfCells - row*columns + column;
-        //alter the color of the cellnumberth cell
-        //each cell has 1 vertex
-        //each vertex has 2 parts a position and a color
-        //each vertex is as such {x,y,z,r,g,b,a};
-        //each cell is as such {x,y,z,r,g,b,a};
-        int offset = POSITION_COMPONENT_COUNT + (cellNumber - 1)*VERTICES_PER_CELL*(POSITION_COMPONENT_COUNT + COLOR_COMPONENT_COUNT);
-        int byteOffset = BYTES_PER_FLOAT*offset;
-
-        //glBufferSubData(GL_ARRAY_BUFFER,byteOffset,livingColorBuffer.capacity() * BYTES_PER_FLOAT,livingColorBuffer);
+        cellColorReference = glGetUniformLocation(program,"liveCellColor");
     }
 
     public void setPointSize(float pointSize) {
@@ -219,9 +189,9 @@ public class Point extends RenderObject {
             y += pointSize;
             i++;
         }
-            vertexAndStatusBuffer = getNativeOrderFloatBuffer(vertexAndStatus.length);
-            vertexAndStatusBuffer.put(vertexAndStatus);
-            vertexAndStatusBuffer.position(0);
+        vertexAndStatusBuffer = getNativeOrderFloatBuffer(vertexAndStatus.length);
+        vertexAndStatusBuffer.put(vertexAndStatus);
+        vertexAndStatusBuffer.position(0);
 
         initIndexBuffer(indices);
     }
@@ -239,14 +209,6 @@ public class Point extends RenderObject {
         for (int i = 0; i < indices.length; i++) {
             indices[i] = i;
         }
-    }
-
-    public void stopUpdating() {
-        update = false;
-    }
-
-    public void startUpdating(){
-        update = true;
     }
 
     public void setCellColor(float[] cellColor) {
