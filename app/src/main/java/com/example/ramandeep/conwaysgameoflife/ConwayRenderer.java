@@ -42,6 +42,9 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
     private String maPointVertexAltSource;
     private String maPointFragmentSource;
 
+    private String quadVertexSource;
+    private String quadFragmentSource;
+
     private int columns = -1;
     private int rows = -1;
 
@@ -71,13 +74,14 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
 
         maPointVertexAltSource = RenderObject.readSourceFromRaw(context,R.raw.ma_alt_point_vertex);
         maPointFragmentSource = RenderObject.readSourceFromRaw(context,R.raw.ma_point_frag);
+
+        quadVertexSource = RenderObject.readSourceFromRaw(context,R.raw.grid_vertex);
+        quadFragmentSource = RenderObject.readSourceFromRaw(context,R.raw.spoint_fragment);
     }
 
     @Override
     public void onSurfaceCreated(GL10 gl10, EGLConfig eglConfig) {
         glClearColor(0f,0f,0f,1f);
-        System.out.println("glSurfaceView onSurfaceCreated!");
-
 
         grid.setShaderFromSource(GL_VERTEX_SHADER,gridVertexSource);
         grid.setShaderFromSource(GL_FRAGMENT_SHADER,spointFragmentSource);
@@ -86,12 +90,11 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
         points.setShaderFromSource(GL_VERTEX_SHADER,maPointVertexAltSource);
         points.setShaderFromSource(GL_FRAGMENT_SHADER,maPointFragmentSource);
         points.createProgram();
+
     }
 
     @Override
     public void onSurfaceChanged(GL10 gl10, int width, int height) {
-        System.out.println("glSurfaceView onSurfaceChanged!");
-
         float colWidth = ((float)width)/columns;
 
         //surfaceHeight/columnWidth
@@ -106,6 +109,7 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
         points.setMvpMatrix(mvpMatrix);
         points.generatePointGrid();
         points.setAttributeAndVBO();
+
         glLineWidth(2f);
 
         if(displayUpdateLatch != null){
@@ -129,7 +133,6 @@ class ConwayRenderer implements GLSurfaceView.Renderer{
         glClear(GL_COLOR_BUFFER_BIT);
         points.draw();
         grid.draw();
-
     }
 
     public void setUpdateLatch(CountDownLatch updateLatch) {

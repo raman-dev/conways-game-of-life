@@ -165,8 +165,10 @@ public class Grid extends RenderObject {
         glEnableVertexAttribArray(positionReference);
 
         glUseProgram(program);
+
         glUniformMatrix4fv(mvpMatrixReference,1,false,mvpMatrixBuffer);
         glUniform4fv(colorReference,1,colorBuffer);
+
         glDrawElements(GL_LINES,indexBuffer.capacity(),GL_UNSIGNED_INT,0);
         glDisableVertexAttribArray(positionReference);
     }

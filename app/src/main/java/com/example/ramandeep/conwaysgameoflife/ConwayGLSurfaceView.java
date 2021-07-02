@@ -77,7 +77,7 @@ public class ConwayGLSurfaceView extends GLSurfaceView implements ConwayProcesso
     }
 
     @Override
-    public void OnReceiveFrame(byte[] data) {
+    public void OnFrameAvailable(byte[] data) {
         frameQueue.add(data);
         requestRender();
     }
@@ -126,8 +126,8 @@ public class ConwayGLSurfaceView extends GLSurfaceView implements ConwayProcesso
     public void onClickNext() {
         pauseProcessing();
         clearUpdateQueues();
-        loadNextConwayObject();
-        updateConwayIter();
+        updateConwayIter(true);
+        loadNextConwayObject(conwayIter);
         //i want to couple rendering and processing
         //1 frame rendered per frame processed
         //not like how i am doing now
@@ -137,10 +137,13 @@ public class ConwayGLSurfaceView extends GLSurfaceView implements ConwayProcesso
         frameQueue.clear();
     }
 
-    private void updateConwayIter() {
-        conwayIter++;
+    private void updateConwayIter(boolean incrementFlag) {
+        conwayIter = incrementFlag? conwayIter + 1: conwayIter - 1 ;
         if (conwayIter >= conwayObjectList.size()) {
             conwayIter = 0;
+        }
+        else if(conwayIter < 0){
+            conwayIter = conwayObjectList.size() - 1;
         }
     }
 
@@ -154,8 +157,8 @@ public class ConwayGLSurfaceView extends GLSurfaceView implements ConwayProcesso
         conwayIter = 0;
     }
 
-    private void loadNextConwayObject() {
-        conwayProcessor.loadNewObject(conwayObjectList.get(conwayIter));
+    private void loadNextConwayObject(int index) {
+        conwayProcessor.loadNewObject(conwayObjectList.get(index));
     }
 
     private void resumeProcessing() {
@@ -187,6 +190,7 @@ public class ConwayGLSurfaceView extends GLSurfaceView implements ConwayProcesso
         if(initialized){
             return;
         }
+        //takes time so needs a seperate thread
         initTask.submitRunnable(new Runnable() {
             @Override
             public void run() {
@@ -195,10 +199,16 @@ public class ConwayGLSurfaceView extends GLSurfaceView implements ConwayProcesso
                 //could grab a reference to the handler from here
                 conwayProcessor.init(rows, columns);
                 loadInitial(conwayObjectList.get(conwayIter));
-                updateConwayIter();
                 initialized = true;
                 System.out.println("InitGLSV!");
             }
         });
+    }
+
+    public void onClickPrev() {
+        pauseProcessing();
+        clearUpdateQueues();
+        updateConwayIter(false);
+        loadNextConwayObject(conwayIter);
     }
 }

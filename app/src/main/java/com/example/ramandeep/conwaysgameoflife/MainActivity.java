@@ -2,6 +2,8 @@ package com.example.ramandeep.conwaysgameoflife;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.preference.PreferenceManager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -11,6 +13,7 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton;
 
 import java.util.ArrayList;
 
@@ -39,12 +42,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private SharedPreferences.OnSharedPreferenceChangeListener sharedPrefListener;
     private SharedPreferences sharedPref;
 
+    private Drawable playDrawable;
+    private Drawable pauseDrawable;
+    private ImageButton playPauseButton;
+    private boolean isRunning = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         Toolbar toolbar = (Toolbar)findViewById(R.id.mainToolbar);
+        toolbar.setBackgroundColor(Color.parseColor("#212121"));
         setSupportActionBar(toolbar);
 
         sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
@@ -71,19 +80,21 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }
         };
 
-        conwayGLSurfaceView = (ConwayGLSurfaceView)findViewById(R.id.conwayGLSurfaceView);
+        conwayGLSurfaceView = findViewById(R.id.conwayGLSurfaceView);
         conwayObjects = new ArrayList<>();
         getConwayObjects(conwayObjects,conwayResourceIDs[Integer.parseInt(sharedPref.getString("conway_objects","0"))],this);
         conwayGLSurfaceView.setConwayObjectList(conwayObjects);
 
+        ImageButton nextButton = findViewById(R.id.nextButton);
+        ImageButton prevButton = findViewById(R.id.prevButton);
 
-        Button startButton = (Button)findViewById(R.id.startButton);
-        Button stopButton = (Button)findViewById(R.id.stopButton);
-        Button nextButton = (Button)findViewById(R.id.nextButton);
+        playDrawable = getDrawable(R.drawable.ic_play);
+        pauseDrawable = getDrawable(R.drawable.ic_pause);
+        playPauseButton = findViewById(R.id.playPauseButton);
 
-        startButton.setOnClickListener(this);
-        stopButton.setOnClickListener(this);
+        playPauseButton.setOnClickListener(this);
         nextButton.setOnClickListener(this);
+        prevButton.setOnClickListener(this);
     }
 
     @Override
@@ -114,6 +125,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     protected void onPause(){
         super.onPause();
+        if(isRunning) {
+            isRunning = false;
+            playPauseButton.setImageDrawable(playDrawable);
+        }
         conwayGLSurfaceView.onPause();
         sharedPref.registerOnSharedPreferenceChangeListener(sharedPrefListener);
     }
@@ -128,14 +143,25 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onClick(View view) {
         switch (view.getId()){
-            case R.id.startButton:
-                conwayGLSurfaceView.onClickStart();
-                break;
-            case R.id.stopButton:
-                conwayGLSurfaceView.onClickStop();
+            case R.id.playPauseButton:
+                if(isRunning){
+                    conwayGLSurfaceView.onClickStop();
+                    playPauseButton.setImageDrawable(playDrawable);
+                }else{
+                    conwayGLSurfaceView.onClickStart();
+                    playPauseButton.setImageDrawable(pauseDrawable);
+                }
+                isRunning = !isRunning;
                 break;
             case R.id.nextButton:
+                isRunning = false;
+                playPauseButton.setImageDrawable(playDrawable);
                 conwayGLSurfaceView.onClickNext();
+                break;
+            case R.id.prevButton:
+                isRunning = false;
+                playPauseButton.setImageDrawable(playDrawable);
+                conwayGLSurfaceView.onClickPrev();
                 break;
         }
     }

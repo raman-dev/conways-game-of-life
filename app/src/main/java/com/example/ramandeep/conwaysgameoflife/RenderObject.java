@@ -125,12 +125,6 @@ public abstract class RenderObject {
         vertexBuffer.position(0);
     }
 
-    protected void initVertexAndColorBuffer(float[] values) {
-        vertexAndColorBuffer = getNativeOrderFloatBuffer(values.length);
-        vertexAndColorBuffer.put(values);
-        vertexAndColorBuffer.position(0);
-    }
-
     protected void initColorBuffer(float[] color) {
         colorBuffer = getNativeOrderFloatBuffer(color.length);
         colorBuffer.put(color);

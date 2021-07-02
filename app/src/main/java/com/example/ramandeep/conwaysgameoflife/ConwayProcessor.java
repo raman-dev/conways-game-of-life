@@ -3,7 +3,6 @@ package com.example.ramandeep.conwaysgameoflife;
 import android.content.Context;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.os.Message;
 import android.renderscript.Allocation;
 import android.renderscript.Element;
 import android.renderscript.Int2;
@@ -13,8 +12,6 @@ import android.renderscript.Type;
 import com.example.ramandeep.conwaysgameex5.ScriptC_ConwayProcessScript;
 
 import java.util.Arrays;
-import java.util.HashSet;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -59,7 +56,7 @@ public class ConwayProcessor {
     private CountDownLatch displayUpdateLatch;
 
     public interface FrameUpdateListener{
-        void OnReceiveFrame(byte[] data);
+        void OnFrameAvailable(byte[] data);
     }
 
     public ConwayProcessor(Context context,FrameUpdateListener mFrameUpdateListener) {
@@ -172,7 +169,7 @@ public class ConwayProcessor {
         //yea i was appending arrays everytime anyway
         byte[] array = new byte[nextGen.length];
         System.arraycopy(nextGen,0,array,0,nextGen.length);
-        mFrameUpdateListener.OnReceiveFrame(array);
+        mFrameUpdateListener.OnFrameAvailable(array);
     }
 
     public void onResume() {
